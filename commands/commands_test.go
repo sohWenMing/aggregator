@@ -2,6 +2,7 @@ package commands
 
 import (
 	"bytes"
+	"fmt"
 	"testing"
 
 	definedErrors "github.com/sohWenMing/aggregator/defined_errors"
@@ -71,6 +72,7 @@ func TestHandlerLogin(t *testing.T) {
 				configAfterWrite, err := config.Read()
 				testHelpers.AssertNoError(err, t)
 				testHelpers.AssertStrings(configAfterWrite.Current_user_name, test.expectedUserName, t)
+				testHelpers.AssertStrings(buf.String(), fmt.Sprintln("Username has been set to:", test.expectedUserName), t)
 			}
 		})
 	}

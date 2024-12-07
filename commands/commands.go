@@ -27,7 +27,7 @@ func handlerLogin(c *config.Config, cmd command, w io.Writer) error {
 		return definedErrors.ErrUserNameNil
 	}
 	c.SetUser(trimmedUserNameToSet)
-	fmt.Fprintln(w, "Username has been set to: ", trimmedUserNameToSet)
+	fmt.Fprintln(w, "Username has been set to:", trimmedUserNameToSet)
 	return nil
 }
 

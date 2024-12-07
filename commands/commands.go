@@ -14,6 +14,32 @@ type command struct {
 	args []string
 }
 
+type Commands struct {
+	commandMap map[string]func(c *config.Config, cmd command, w io.Writer) error
+}
+
+func (c *Commands) Register(name string, fn func(c *config.Config, cmd command, w io.Writer) error) {
+	if c.commandMap == nil {
+		c.commandMap = make(map[string]func(c *config.Config, cmd command, w io.Writer) error)
+	}
+	c.commandMap[name] = fn
+}
+func (c *Commands) Run(cnf *config.Config, cmd command, w io.Writer) error {
+	if c.commandMap == nil {
+		return definedErrors.ErrCommandMapNil
+	}
+	command, ok := c.commandMap[cmd.name]
+	if !ok {
+		return fmt.Errorf("%w command name passed in: %s", definedErrors.ErrCommandNotExist, cmd.name)
+	}
+	err := command(cnf, cmd, w)
+	if err != nil {
+		return err
+	}
+	return nil
+
+}
+
 func handlerLogin(c *config.Config, cmd command, w io.Writer) error {
 	if len(cmd.args) == 0 {
 		return definedErrors.ErrLoginHandlerZeroArgs

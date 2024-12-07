@@ -3,6 +3,7 @@ package commands
 import (
 	"bytes"
 	"fmt"
+	"io"
 	"testing"
 
 	definedErrors "github.com/sohWenMing/aggregator/defined_errors"
@@ -76,4 +77,79 @@ func TestHandlerLogin(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestRegister(t *testing.T) {
+	commandStruct := Commands{}
+	commandStruct.Register("login", handlerLogin)
+	_, ok := commandStruct.commandMap["login"]
+	if !ok {
+		t.Errorf("login was not registered")
+	}
+	testHelpers.AssertStrings(fmt.Sprintf("%p", commandStruct.commandMap["login"]), fmt.Sprintf("%p", handlerLogin), t)
+}
+
+func testHandler(c *config.Config, cmd command, w io.Writer) error {
+	fmt.Fprint(w, cmd.name)
+	return nil
+}
+
+func TestRun(t *testing.T) {
+	type testStruct struct {
+		name          string
+		command       command
+		commandStruct Commands
+		isErrExpected bool
+		expectedErr   error
+	}
+
+	tests := []testStruct{
+		{
+			"testing empty Commands struct error",
+			command{},
+			Commands{},
+			true,
+			definedErrors.ErrCommandMapNil,
+		},
+		{
+			"testing non existing command error",
+			command{"wrong command", []string{}},
+			Commands{
+				commandMap: map[string]func(c *config.Config, cmd command, w io.Writer) error{
+					"login": handlerLogin,
+				},
+			},
+			true,
+			definedErrors.ErrCommandNotExist,
+		},
+		{
+			"testing successful registering of command",
+			command{"testHandler", []string{}},
+			Commands{
+				commandMap: map[string]func(c *config.Config, cmd command, w io.Writer) error{
+					"testHandler": testHandler,
+				},
+			},
+			false,
+			nil,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			currentConfig, err := config.Read()
+			testHelpers.AssertNoError(err, t)
+			buf := bytes.Buffer{}
+			commandRunErr := test.commandStruct.Run(&currentConfig, test.command, &buf)
+			switch test.isErrExpected {
+			case true:
+				testHelpers.AssertHasError(commandRunErr, t)
+				testHelpers.AssertErrorType(commandRunErr, test.expectedErr, t)
+			case false:
+				testHelpers.AssertStrings(buf.String(), test.command.name, t)
+			}
+
+		})
+	}
+
 }

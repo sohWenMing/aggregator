@@ -9,22 +9,31 @@ import (
 	"github.com/sohWenMing/aggregator/internal/config"
 )
 
-type command struct {
+func GenerateCommand(args []string) (cmd Command, err error) {
+	if len(args) < 3 {
+		return Command{}, definedErrors.ErrNotEnoughArguments
+	}
+	cmd.name = args[1]
+	cmd.args = args[2:]
+	return cmd, nil
+}
+
+type Command struct {
 	name string
 	args []string
 }
 
 type Commands struct {
-	commandMap map[string]func(c *config.Config, cmd command, w io.Writer) error
+	commandMap map[string]func(c *config.Config, cmd Command, w io.Writer) error
 }
 
-func (c *Commands) Register(name string, fn func(c *config.Config, cmd command, w io.Writer) error) {
+func (c *Commands) Register(name string, fn func(c *config.Config, cmd Command, w io.Writer) error) {
 	if c.commandMap == nil {
-		c.commandMap = make(map[string]func(c *config.Config, cmd command, w io.Writer) error)
+		c.commandMap = make(map[string]func(c *config.Config, cmd Command, w io.Writer) error)
 	}
 	c.commandMap[name] = fn
 }
-func (c *Commands) Run(cnf *config.Config, cmd command, w io.Writer) error {
+func (c *Commands) Run(cnf *config.Config, cmd Command, w io.Writer) error {
 	if c.commandMap == nil {
 		return definedErrors.ErrCommandMapNil
 	}
@@ -40,7 +49,8 @@ func (c *Commands) Run(cnf *config.Config, cmd command, w io.Writer) error {
 
 }
 
-func handlerLogin(c *config.Config, cmd command, w io.Writer) error {
+func HandlerLogin(c *config.Config, cmd Command, w io.Writer) error {
+
 	if len(cmd.args) == 0 {
 		return definedErrors.ErrLoginHandlerZeroArgs
 	}
@@ -56,11 +66,3 @@ func handlerLogin(c *config.Config, cmd command, w io.Writer) error {
 	fmt.Fprintln(w, "Username has been set to:", trimmedUserNameToSet)
 	return nil
 }
-
-/*
-
-   If the command's arg's slice is empty, return an error; the login handler expects a single argument, the username.
-   Use the state's access to the config struct to set the user to the given username. Remember to return any errors.
-   Print a message to the terminal that the user has been set.
-
-*/

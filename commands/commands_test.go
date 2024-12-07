@@ -14,7 +14,7 @@ import (
 func TestHandlerLogin(t *testing.T) {
 	type testStruct struct {
 		name             string
-		cmd              command
+		cmd              Command
 		isErrExpected    bool
 		expectedErr      error
 		expectedUserName string
@@ -22,7 +22,7 @@ func TestHandlerLogin(t *testing.T) {
 	tests := []testStruct{
 		{
 			"testing no arguments",
-			command{
+			Command{
 				"login",
 				[]string{},
 			},
@@ -32,7 +32,7 @@ func TestHandlerLogin(t *testing.T) {
 		},
 		{
 			"testing all empty args",
-			command{
+			Command{
 				"login",
 				[]string{
 					"           ",
@@ -45,7 +45,7 @@ func TestHandlerLogin(t *testing.T) {
 		},
 		{
 			"testing proper arguments",
-			command{
+			Command{
 				"login",
 				[]string{
 					"Soh",
@@ -63,7 +63,7 @@ func TestHandlerLogin(t *testing.T) {
 			currentConfig, err := config.Read()
 			testHelpers.AssertNoError(err, t)
 			buf := bytes.Buffer{}
-			handlerErr := handlerLogin(&currentConfig, test.cmd, &buf)
+			handlerErr := HandlerLogin(&currentConfig, test.cmd, &buf)
 			switch test.isErrExpected {
 			case true:
 				testHelpers.AssertHasError(handlerErr, t)
@@ -81,15 +81,15 @@ func TestHandlerLogin(t *testing.T) {
 
 func TestRegister(t *testing.T) {
 	commandStruct := Commands{}
-	commandStruct.Register("login", handlerLogin)
+	commandStruct.Register("login", HandlerLogin)
 	_, ok := commandStruct.commandMap["login"]
 	if !ok {
 		t.Errorf("login was not registered")
 	}
-	testHelpers.AssertStrings(fmt.Sprintf("%p", commandStruct.commandMap["login"]), fmt.Sprintf("%p", handlerLogin), t)
+	testHelpers.AssertStrings(fmt.Sprintf("%p", commandStruct.commandMap["login"]), fmt.Sprintf("%p", HandlerLogin), t)
 }
 
-func testHandler(c *config.Config, cmd command, w io.Writer) error {
+func testHandler(c *config.Config, cmd Command, w io.Writer) error {
 	fmt.Fprint(w, cmd.name)
 	return nil
 }
@@ -97,7 +97,7 @@ func testHandler(c *config.Config, cmd command, w io.Writer) error {
 func TestRun(t *testing.T) {
 	type testStruct struct {
 		name          string
-		command       command
+		command       Command
 		commandStruct Commands
 		isErrExpected bool
 		expectedErr   error
@@ -106,17 +106,17 @@ func TestRun(t *testing.T) {
 	tests := []testStruct{
 		{
 			"testing empty Commands struct error",
-			command{},
+			Command{},
 			Commands{},
 			true,
 			definedErrors.ErrCommandMapNil,
 		},
 		{
 			"testing non existing command error",
-			command{"wrong command", []string{}},
+			Command{"wrong command", []string{}},
 			Commands{
-				commandMap: map[string]func(c *config.Config, cmd command, w io.Writer) error{
-					"login": handlerLogin,
+				commandMap: map[string]func(c *config.Config, cmd Command, w io.Writer) error{
+					"login": HandlerLogin,
 				},
 			},
 			true,
@@ -124,9 +124,9 @@ func TestRun(t *testing.T) {
 		},
 		{
 			"testing successful registering of command",
-			command{"testHandler", []string{}},
+			Command{"testHandler", []string{}},
 			Commands{
-				commandMap: map[string]func(c *config.Config, cmd command, w io.Writer) error{
+				commandMap: map[string]func(c *config.Config, cmd Command, w io.Writer) error{
 					"testHandler": testHandler,
 				},
 			},
@@ -151,5 +151,58 @@ func TestRun(t *testing.T) {
 
 		})
 	}
+}
 
+func TestGenerateCommand(t *testing.T) {
+	type testStruct struct {
+		name          string
+		args          []string
+		isErrExpected bool
+		expectedCmd   Command
+		expectedErr   error
+	}
+
+	tests := []testStruct{
+		{
+			"testing no args",
+			[]string{},
+			true,
+			Command{},
+			definedErrors.ErrNotEnoughArguments,
+		},
+		{
+			"testing 1 arg",
+			[]string{"one"},
+			true,
+			Command{},
+			definedErrors.ErrNotEnoughArguments,
+		},
+		{
+			"testing correct args",
+			[]string{"one", "two", "three"},
+			false,
+			Command{
+				"one",
+				[]string{
+					"two", "three",
+				},
+			},
+			nil,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			got, err := GenerateCommand(test.args)
+			switch test.isErrExpected {
+			case true:
+				testHelpers.AssertErrorType(err, test.expectedErr, t)
+			case false:
+				testHelpers.AssertStrings(test.expectedCmd.name, got.name, t)
+				for i, arg := range got.args {
+					testHelpers.AssertStrings(test.expectedCmd.args[i], arg, t)
+				}
+			}
+		})
+	}
 }

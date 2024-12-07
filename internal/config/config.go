@@ -13,7 +13,6 @@ type Config struct {
 }
 
 func (c *Config) SetUser(username string) error {
-
 	c.Current_user_name = username
 	bytes, err := json.Marshal(c)
 	if err != nil {

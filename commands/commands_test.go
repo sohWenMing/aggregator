@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"testing"
 
+	"github.com/sohWenMing/aggregator/internal/config"
 	testutils "github.com/sohWenMing/aggregator/test_utils"
 )
 
@@ -69,7 +70,7 @@ func TestInitAndExecCommand(t *testing.T) {
 			handlerTest,
 		},
 	}
-	commandsPtr.registerAllHandlers(nameToHandlers)
+	commandsPtr.registerAllHandlersTest(nameToHandlers)
 	args := []string{"test-program", "test", "test_string_1, test_string_2"}
 	cmd, err := ParseCommand(args)
 	testutils.AssertNoErr(err, t)
@@ -84,5 +85,25 @@ func TestInitAndExecCommand(t *testing.T) {
 	for i, lineInBuf := range linesInBuf {
 		testutils.AssertStrings(lineInBuf, cmd.args[i], t)
 	}
+
+}
+
+func TestExecCommands(t *testing.T) {
+
+	commandsPtr := InitCommands()
+	commandsPtr.registerAllHandlers()
+	args := []string{"test-program", "login", "nindgabeet"}
+	cmd, err := ParseCommand(args)
+	testutils.AssertNoErr(err, t)
+
+	initialConfig, err := config.Read()
+	testutils.AssertNoErr(err, t)
+	buf := bytes.Buffer{}
+	execError := commandsPtr.execCommand(cmd, &buf, "", initialConfig)
+	testutils.AssertNoErr(execError, t)
+
+	configAfterSetUser, err := config.Read()
+	testutils.AssertNoErr(err, t)
+	testutils.AssertStrings(configAfterSetUser.CurrentUserName, "nindgabeet", t)
 
 }

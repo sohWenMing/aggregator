@@ -3,6 +3,7 @@ package commands
 import (
 	"fmt"
 	"io"
+	"strings"
 
 	definederrors "github.com/sohWenMing/aggregator/defined_errors"
 	"github.com/sohWenMing/aggregator/internal/config"
@@ -10,7 +11,7 @@ import (
 
 // ############# command struct, used to house all the configured commands with relevant methods ######### //
 type commands struct {
-	commandMap map[string]func(cmd enteredCommand, w io.Writer, filePath string, c *config.Config) (err error)
+	commandMap map[string]func(cmd enteredCommand, w io.Writer, c *config.Config) (err error)
 }
 
 func (c *commands) execCommand(cmd enteredCommand, w io.Writer, filePath string, config *config.Config) (err error) {
@@ -18,14 +19,25 @@ func (c *commands) execCommand(cmd enteredCommand, w io.Writer, filePath string,
 	if !ok {
 		return definederrors.ErrorHandlerNotExist
 	}
-	handlerErr := handler(cmd, w, filePath, config)
+	handlerErr := handler(cmd, w, config)
 	if handlerErr != nil {
 		return handlerErr
 	}
 	return nil
 }
 
-func (c *commands) registerAllHandlers(nameToHandlers []nameToHandler) (err error) {
+func (c *commands) registerAllHandlers() (err error) {
+
+	for _, nameToHandler := range initAllNameToHandlers() {
+		err := c.registerHandler(nameToHandler.name, nameToHandler.handler)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (c *commands) registerAllHandlersTest(nameToHandlers []nameToHandler) (err error) {
 	for _, nameToHandler := range nameToHandlers {
 		err := c.registerHandler(nameToHandler.name, nameToHandler.handler)
 		if err != nil {
@@ -35,7 +47,7 @@ func (c *commands) registerAllHandlers(nameToHandlers []nameToHandler) (err erro
 	return nil
 }
 
-func (c *commands) registerHandler(name string, handler func(cmd enteredCommand, w io.Writer, filePath string, c *config.Config) (err error)) (err error) {
+func (c *commands) registerHandler(name string, handler func(cmd enteredCommand, w io.Writer, c *config.Config) (err error)) (err error) {
 	if c.commandMap == nil {
 		return fmt.Errorf("pointer to commandMap is nil pointer %w", definederrors.ErrorNilPointer)
 	}
@@ -49,10 +61,25 @@ func (c *commands) registerHandler(name string, handler func(cmd enteredCommand,
 
 type nameToHandler struct {
 	name    string
-	handler func(cmd enteredCommand, w io.Writer, filePath string, c *config.Config) (err error)
+	handler func(cmd enteredCommand, w io.Writer, c *config.Config) (err error)
 }
 
-func handlerTest(cmd enteredCommand, w io.Writer, filePath string, config *config.Config) (err error) {
+func initAllNameToHandlers() []nameToHandler {
+	returnedNameToHandlers := []nameToHandler{
+		{"login", handlerLogin},
+	}
+	return returnedNameToHandlers
+
+}
+
+func handlerLogin(cmd enteredCommand, w io.Writer, config *config.Config) (err error) {
+	if len(cmd.args) != 1 {
+		return fmt.Errorf("args passed into handlerLogin %v %w", cmd.args, definederrors.ErrorWrongNumArgs)
+	}
+	config.SetUser(cmd.args[0], w)
+	return nil
+}
+func handlerTest(cmd enteredCommand, w io.Writer, config *config.Config) (err error) {
 	for _, arg := range cmd.args {
 		fmt.Fprintln(w, arg)
 	}
@@ -62,8 +89,9 @@ func handlerTest(cmd enteredCommand, w io.Writer, filePath string, config *confi
 // called at the main program, used to initialise the commandMap so that it can be written to
 func InitCommands() (commandsPtr *commands) {
 	returnedCommands := commands{}
-	commandMap := make(map[string]func(cmd enteredCommand, w io.Writer, filePath string, c *config.Config) (err error))
+	commandMap := make(map[string]func(cmd enteredCommand, w io.Writer, c *config.Config) (err error))
 	returnedCommands.commandMap = commandMap
+	returnedCommands.registerAllHandlers()
 	return &returnedCommands
 }
 
@@ -80,7 +108,7 @@ func ParseCommand(args []string) (cmd enteredCommand, err error) {
 			fmt.Errorf("only one arguement passed into ParseCommand arg:%s %w",
 				args[0], definederrors.ErrorWrongNumArgs)
 	default:
-		returnedCmd.name = args[1]
+		returnedCmd.name = strings.ToLower(args[1])
 		returnedCmd.args = args[2:]
 		return returnedCmd, nil
 	}

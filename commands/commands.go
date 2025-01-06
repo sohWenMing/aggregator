@@ -6,20 +6,22 @@ import (
 	"strings"
 
 	definederrors "github.com/sohWenMing/aggregator/defined_errors"
-	"github.com/sohWenMing/aggregator/internal/config"
+	"github.com/sohWenMing/aggregator/internal/database"
 )
+
+type handler func(cmd enteredCommand, w io.Writer, state *database.State) (err error)
 
 // ############# command struct, used to house all the configured commands with relevant methods ######### //
 type commands struct {
-	commandMap map[string]func(cmd enteredCommand, w io.Writer, c *config.Config) (err error)
+	commandMap map[string]handler
 }
 
-func (c *commands) ExecCommand(cmd enteredCommand, w io.Writer, config *config.Config) (err error) {
+func (c *commands) ExecCommand(cmd enteredCommand, w io.Writer, state *database.State) (err error) {
 	handler, ok := c.commandMap[cmd.name]
 	if !ok {
 		return definederrors.ErrorHandlerNotExist
 	}
-	handlerErr := handler(cmd, w, config)
+	handlerErr := handler(cmd, w, state)
 	if handlerErr != nil {
 		return handlerErr
 	}
@@ -47,7 +49,7 @@ func (c *commands) registerAllHandlersTest(nameToHandlers []nameToHandler) (err 
 	return nil
 }
 
-func (c *commands) registerHandler(name string, handler func(cmd enteredCommand, w io.Writer, c *config.Config) (err error)) (err error) {
+func (c *commands) registerHandler(name string, handler func(cmd enteredCommand, w io.Writer, state *database.State) (err error)) (err error) {
 	if c.commandMap == nil {
 		return fmt.Errorf("pointer to commandMap is nil pointer %w", definederrors.ErrorNilPointer)
 	}
@@ -61,7 +63,7 @@ func (c *commands) registerHandler(name string, handler func(cmd enteredCommand,
 
 type nameToHandler struct {
 	name    string
-	handler func(cmd enteredCommand, w io.Writer, c *config.Config) (err error)
+	handler func(cmd enteredCommand, w io.Writer, state *database.State) (err error)
 }
 
 func initAllNameToHandlers() []nameToHandler {
@@ -72,15 +74,15 @@ func initAllNameToHandlers() []nameToHandler {
 
 }
 
-func handlerLogin(cmd enteredCommand, w io.Writer, config *config.Config) (err error) {
+func handlerLogin(cmd enteredCommand, w io.Writer, state *database.State) (err error) {
 	if len(cmd.args) != 1 {
 		return fmt.Errorf("args passed into handlerLogin %v %w", cmd.args, definederrors.ErrorWrongNumArgs)
 	}
-	config.SetUser(cmd.args[0], w)
+	state.Cfg.SetUser(cmd.args[0], w)
 	fmt.Fprintf(w, "user %s is now logged in\n", cmd.args[0])
 	return nil
 }
-func handlerTest(cmd enteredCommand, w io.Writer, config *config.Config) (err error) {
+func handlerTest(cmd enteredCommand, w io.Writer, state *database.State) (err error) {
 	for _, arg := range cmd.args {
 		fmt.Fprintln(w, arg)
 	}
@@ -90,7 +92,7 @@ func handlerTest(cmd enteredCommand, w io.Writer, config *config.Config) (err er
 // called at the main program, used to initialise the commandMap so that it can be written to
 func InitCommands() (commandsPtr *commands) {
 	returnedCommands := commands{}
-	commandMap := make(map[string]func(cmd enteredCommand, w io.Writer, c *config.Config) (err error))
+	commandMap := make(map[string]handler)
 	returnedCommands.commandMap = commandMap
 	returnedCommands.registerAllHandlers()
 	return &returnedCommands

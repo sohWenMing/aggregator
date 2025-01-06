@@ -6,7 +6,7 @@ import (
 	_ "github.com/lib/pq"
 	//this needs to be done to import the postgres driver
 	"github.com/sohWenMing/aggregator/commands"
-	"github.com/sohWenMing/aggregator/internal/config"
+	"github.com/sohWenMing/aggregator/internal/database"
 )
 
 func main() {
@@ -16,7 +16,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	state, err := config.Read()
+	state, err := database.CreateDBConnection()
 	if err != nil {
 		os.Exit(1)
 	}

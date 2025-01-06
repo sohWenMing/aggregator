@@ -2,6 +2,7 @@ package config
 
 import (
 	"bytes"
+	"os"
 	"testing"
 
 	definederrors "github.com/sohWenMing/aggregator/defined_errors"
@@ -12,7 +13,7 @@ import (
 func TestReadFunc(t *testing.T) {
 	config, err := Read()
 	testUtils.AssertNoErr(err, t)
-	testUtils.AssertStrings(config.DbUrl, "postgres://example", t)
+	testUtils.AssertStrings(config.DbUrl, os.Getenv("DB_STRING"), t)
 }
 
 func TestSetUser(t *testing.T) {

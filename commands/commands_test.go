@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/sohWenMing/aggregator/internal/config"
+	"github.com/sohWenMing/aggregator/internal/database"
 	testutils "github.com/sohWenMing/aggregator/test_utils"
 )
 
@@ -96,10 +97,10 @@ func TestExecCommands(t *testing.T) {
 	cmd, err := ParseCommand(args)
 	testutils.AssertNoErr(err, t)
 
-	initialConfig, err := config.Read()
+	state, err := database.CreateDBConnection()
 	testutils.AssertNoErr(err, t)
 	buf := bytes.Buffer{}
-	execError := commandsPtr.ExecCommand(cmd, &buf, initialConfig)
+	execError := commandsPtr.ExecCommand(cmd, &buf, state)
 	testutils.AssertNoErr(execError, t)
 
 	configAfterSetUser, err := config.Read()

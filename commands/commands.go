@@ -14,7 +14,7 @@ type commands struct {
 	commandMap map[string]func(cmd enteredCommand, w io.Writer, c *config.Config) (err error)
 }
 
-func (c *commands) execCommand(cmd enteredCommand, w io.Writer, filePath string, config *config.Config) (err error) {
+func (c *commands) ExecCommand(cmd enteredCommand, w io.Writer, config *config.Config) (err error) {
 	handler, ok := c.commandMap[cmd.name]
 	if !ok {
 		return definederrors.ErrorHandlerNotExist
@@ -77,6 +77,7 @@ func handlerLogin(cmd enteredCommand, w io.Writer, config *config.Config) (err e
 		return fmt.Errorf("args passed into handlerLogin %v %w", cmd.args, definederrors.ErrorWrongNumArgs)
 	}
 	config.SetUser(cmd.args[0], w)
+	fmt.Fprintf(w, "user %s is now logged in\n", cmd.args[0])
 	return nil
 }
 func handlerTest(cmd enteredCommand, w io.Writer, config *config.Config) (err error) {

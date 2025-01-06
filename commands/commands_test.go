@@ -75,7 +75,7 @@ func TestInitAndExecCommand(t *testing.T) {
 	cmd, err := ParseCommand(args)
 	testutils.AssertNoErr(err, t)
 	buf := bytes.Buffer{}
-	execError := commandsPtr.execCommand(cmd, &buf, "", nil)
+	execError := commandsPtr.ExecCommand(cmd, &buf, nil)
 	testutils.AssertNoErr(execError, t)
 	linesInBuf := []string{}
 	scanner := bufio.NewScanner(&buf)
@@ -92,14 +92,14 @@ func TestExecCommands(t *testing.T) {
 
 	commandsPtr := InitCommands()
 	commandsPtr.registerAllHandlers()
-	args := []string{"test-program", "login", "nindgabeet"}
+	args := []string{"test-program", "LogIn", "nindgabeet"}
 	cmd, err := ParseCommand(args)
 	testutils.AssertNoErr(err, t)
 
 	initialConfig, err := config.Read()
 	testutils.AssertNoErr(err, t)
 	buf := bytes.Buffer{}
-	execError := commandsPtr.execCommand(cmd, &buf, "", initialConfig)
+	execError := commandsPtr.ExecCommand(cmd, &buf, initialConfig)
 	testutils.AssertNoErr(execError, t)
 
 	configAfterSetUser, err := config.Read()

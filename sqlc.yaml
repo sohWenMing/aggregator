@@ -1,0 +1,11 @@
+version: "2"
+sql:
+- schema: "sql/schema"
+# tells sqlc to look for schema information in the sql/schema folder, relative to the directory in which the yaml file is located
+  queries: "sql/queries"
+# tells sqlc to look for schema information in the sql/queries folder, relative to the directory in which the yaml file is located
+  engine: "postgresql"
+  gen:
+    go:
+      out: "internal/database"
+      #the generated files will be in the internal/database folder, relative to the directory in which the yaml file is located

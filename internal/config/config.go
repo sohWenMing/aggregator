@@ -32,29 +32,28 @@ func (c *Config) SetUser(username string, w io.Writer) (err error) {
 		fmt.Printf("write err happened, %v\n", err)
 		return writeErr
 	}
-	fmt.Fprintf(w, "username has been updated to %s\n", username)
 	return nil
 }
 
-func Read() (config Config, err error) {
+func Read() (config *Config, err error) {
 	returnedConfig := Config{}
 	file, err := openConfigFile()
 	if err != nil {
-		return returnedConfig, err
+		return &returnedConfig, err
 	}
 	defer file.Close()
 
 	fileBytes, fileReadErr := io.ReadAll(file)
 	if fileReadErr != nil {
-		return returnedConfig, fileReadErr
+		return &returnedConfig, fileReadErr
 	}
 
 	unMarshalErr := json.Unmarshal(fileBytes, &returnedConfig)
 	if unMarshalErr != nil {
-		return returnedConfig, unMarshalErr
+		return &returnedConfig, unMarshalErr
 	}
 
-	return returnedConfig, nil
+	return &returnedConfig, nil
 }
 
 func getConfigFilePath() (filePath string, err error) {

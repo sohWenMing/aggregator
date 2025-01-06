@@ -3,8 +3,11 @@ package commands
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"testing"
 
+	definederrors "github.com/sohWenMing/aggregator/defined_errors"
+	errorutils "github.com/sohWenMing/aggregator/error_utils"
 	"github.com/sohWenMing/aggregator/internal/config"
 	"github.com/sohWenMing/aggregator/internal/database"
 	testutils "github.com/sohWenMing/aggregator/test_utils"
@@ -106,5 +109,73 @@ func TestExecCommands(t *testing.T) {
 	configAfterSetUser, err := config.Read()
 	testutils.AssertNoErr(err, t)
 	testutils.AssertStrings(configAfterSetUser.CurrentUserName, "nindgabeet", t)
+
+}
+
+func TestRegisterHandler(t *testing.T) {
+
+	type testStruct struct {
+		name           string
+		args           []string
+		isErrExpected  bool
+		expectedError  error
+		expectedWrites []string
+	}
+
+	tests := []testStruct{
+		{
+			"test initial register nindgabeet",
+			[]string{"test-program", "register", "nindgabeet"},
+			false,
+			nil,
+			[]string{"user nindgabeet has been added"},
+		},
+		{
+			"test fail register nindgabeet",
+			[]string{"test-program", "register", "nindgabeet"},
+			true,
+			definederrors.ErrorUserAlreadyExists,
+			[]string{},
+		},
+	}
+
+	commandsPtr := InitCommands()
+	commandsPtr.registerAllHandlers()
+	state, err := database.CreateDBConnection()
+	testutils.AssertNoErr(err, t)
+	resetErr := state.Db.ResetUsers(context.Background())
+	testutils.AssertNoErr(resetErr, t)
+
+	for _, test := range tests {
+
+		t.Run(test.name, func(t *testing.T) {
+			buf := bytes.Buffer{}
+			cmd, err := ParseCommand(test.args)
+			testutils.AssertNoErr(err, t)
+			execCommandErr := commandsPtr.ExecCommand(cmd, &buf, state)
+			switch test.isErrExpected {
+			case true:
+				testutils.AssertHasErr(execCommandErr, t)
+				isErrMatch := errorutils.CheckErrTypeMatch(execCommandErr, test.expectedError)
+				if !isErrMatch {
+					t.Errorf("got %v\nwant%v", execCommandErr, test.expectedError)
+				}
+			case false:
+				scanner := bufio.NewScanner(&buf)
+				got := []string{}
+				for scanner.Scan() {
+					got = append(got, scanner.Text())
+				}
+				for i, write := range got {
+					testutils.AssertStrings(test.expectedWrites[i], write, t)
+				}
+
+			}
+		})
+	}
+
+	// configAfterSetUser, err := config.Read()
+	// testutils.AssertNoErr(err, t)
+	// testutils.AssertStrings(configAfterSetUser.CurrentUserName, "nindgabeet", t)
 
 }

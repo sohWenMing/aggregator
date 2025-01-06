@@ -1,11 +1,15 @@
 package commands
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"strings"
+	"time"
 
+	"github.com/google/uuid"
 	definederrors "github.com/sohWenMing/aggregator/defined_errors"
+	errorutils "github.com/sohWenMing/aggregator/error_utils"
 	"github.com/sohWenMing/aggregator/internal/database"
 )
 
@@ -69,6 +73,7 @@ type nameToHandler struct {
 func initAllNameToHandlers() []nameToHandler {
 	returnedNameToHandlers := []nameToHandler{
 		{"login", handlerLogin},
+		{"register", handlerRegisterUser},
 	}
 	return returnedNameToHandlers
 
@@ -82,6 +87,33 @@ func handlerLogin(cmd enteredCommand, w io.Writer, state *database.State) (err e
 	fmt.Fprintf(w, "user %s is now logged in\n", cmd.args[0])
 	return nil
 }
+
+func handlerRegisterUser(cmd enteredCommand, w io.Writer, state *database.State) (err error) {
+	if len(cmd.args) != 1 {
+		return fmt.Errorf("args passed into handlerCreateUser %v %w", cmd.args, definederrors.ErrorWrongNumArgs)
+	}
+	params := database.CreateUserParams{
+		ID:        uuid.UUID{},
+		CreatedAt: time.Now(),
+		UpdatedAt: time.Now(),
+		Name:      cmd.args[0],
+	}
+	_, createErr := state.Db.CreateUser(context.Background(), params)
+	if createErr != nil {
+		isPQErr, pqErr, rawErr := errorutils.UnwrapPqErr(createErr)
+		if isPQErr {
+			if pqErr.Code == "23505" {
+				fmt.Fprintf(w, "User %s already exists in database\n", cmd.args[0])
+				return fmt.Errorf("user %s already exists %w", cmd.args[0], definederrors.ErrorUserAlreadyExists)
+			}
+		}
+		return rawErr
+	}
+	fmt.Fprintf(w, "user %s has been added\n", cmd.args[0])
+	state.Cfg.SetUser(cmd.args[0], w)
+	return nil
+}
+
 func handlerTest(cmd enteredCommand, w io.Writer, state *database.State) (err error) {
 	for _, arg := range cmd.args {
 		fmt.Fprintln(w, arg)

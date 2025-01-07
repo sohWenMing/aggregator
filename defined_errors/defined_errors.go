@@ -10,4 +10,5 @@ var (
 	ErrorNilPointer        = errors.New("pointer is nil")
 	ErrorUserAlreadyExists = errors.New("user already exists in database")
 	ErrorUserNotFound      = errors.New("user could not be retrieved")
+	ErrorDatabaseErr       = errors.New("generic database error")
 )

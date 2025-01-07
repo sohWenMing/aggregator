@@ -228,16 +228,52 @@ func TestLoginHandler(t *testing.T) {
 				loginExecErr := commandsPtr.ExecCommand(loginCmd, &buf, state)
 				testutils.AssertNoErr(loginExecErr, t)
 			}
-			linesInBuf := []string{}
-			scanner := bufio.NewScanner(&buf)
-			for scanner.Scan() {
-				linesInBuf = append(linesInBuf, scanner.Text())
-			}
+			linesInBuf := getLinesInBuf(buf)
 			if len(linesInBuf) != len(test.expectedOutputs) {
 				t.Fatalf("num lines in buf: %d\n numlines in expectedOutputs: %d", len(linesInBuf), len(test.expectedOutputs))
 			}
 		})
 	}
+}
+
+func TestGetUsers(t *testing.T) {
+
+	commandsPtr, state := initCommandsAndState(t)
+	resetErr := state.Db.ResetUsers(context.Background())
+	testutils.AssertNoErr(resetErr, t)
+
+	usersToRegister := []string{"kahya", "holgith"}
+	registerArgs := [][]string{}
+
+	for _, userToRegister := range usersToRegister {
+		registerArg := []string{"test-program", "register", userToRegister}
+		registerArgs = append(registerArgs, registerArg)
+	}
+	// loop registers the users to the database
+	buf := bytes.Buffer{}
+	for _, args := range registerArgs {
+		cmd, err := ParseCommand(args)
+		testutils.AssertNoErr(err, t)
+		execCommandErr := commandsPtr.ExecCommand(cmd, &buf, state)
+		testutils.AssertNoErr(execCommandErr, t)
+	}
+
+	getUsersCmd, err := ParseCommand([]string{"test-program", "users"})
+	testutils.AssertNoErr(err, t)
+
+	gotBuf := bytes.Buffer{}
+	getUsersErr := commandsPtr.ExecCommand(getUsersCmd, &gotBuf, state)
+	testutils.AssertNoErr(getUsersErr, t)
+
+	linesInBuf := getLinesInBuf(gotBuf)
+	expected := []string{
+		"* kahya",
+		"* holgith (current)",
+	}
+	for i, lineInBuf := range linesInBuf {
+		testutils.AssertStrings(lineInBuf, expected[i], t)
+	}
+
 }
 
 func initCommandsAndState(t *testing.T) (*commands, *database.State) {
@@ -248,4 +284,13 @@ func initCommandsAndState(t *testing.T) (*commands, *database.State) {
 	resetErr := state.Db.ResetUsers(context.Background())
 	testutils.AssertNoErr(resetErr, t)
 	return commandsPtr, state
+}
+
+func getLinesInBuf(buf bytes.Buffer) []string {
+	linesInBuf := []string{}
+	scanner := bufio.NewScanner(&buf)
+	for scanner.Scan() {
+		linesInBuf = append(linesInBuf, scanner.Text())
+	}
+	return linesInBuf
 }

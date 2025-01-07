@@ -75,9 +75,35 @@ func initAllNameToHandlers() []nameToHandler {
 		{"login", handlerLogin},
 		{"register", handlerRegisterUser},
 		{"reset", handlerResetDatabase},
+		{"users", handlerGetUsers},
 	}
 	return returnedNameToHandlers
 
+}
+
+func handlerGetUsers(_ enteredCommand, w io.Writer, state *database.State) (err error) {
+
+	users, getUsersErr := state.Db.GetUsers(context.Background())
+	if getUsersErr != nil {
+		isPqErr, pqErr, rawErr := errorutils.UnwrapPqErr(getUsersErr)
+		switch isPqErr {
+		case true:
+			fmt.Fprintf(w, "error code: %s\n", string(pqErr.Code))
+			return fmt.Errorf("postgres error occured: %w", definederrors.ErrorDatabaseErr)
+		case false:
+			fmt.Fprintln(w, rawErr.Error())
+			return rawErr
+		}
+	}
+	for _, user := range users {
+		stringBytes := []byte("*" + " " + user.Name)
+		if user.Name == state.Cfg.CurrentUserName {
+			stringBytes = append(stringBytes, []byte(" (current)")...)
+		}
+		stringToPrint := string(stringBytes)
+		fmt.Fprintln(w, stringToPrint)
+	}
+	return nil
 }
 
 func handlerLogin(cmd enteredCommand, w io.Writer, state *database.State) (retrieveErr error) {

@@ -79,10 +79,16 @@ func initAllNameToHandlers() []nameToHandler {
 
 }
 
-func handlerLogin(cmd enteredCommand, w io.Writer, state *database.State) (err error) {
+func handlerLogin(cmd enteredCommand, w io.Writer, state *database.State) (retrieveErr error) {
 	if len(cmd.args) != 1 {
 		return fmt.Errorf("args passed into handlerLogin %v %w", cmd.args, definederrors.ErrorWrongNumArgs)
 	}
+	_, err := state.Db.RetrieveUser(context.Background(), cmd.args[0])
+	if err != nil {
+		fmt.Fprintf(w, "user %s could not be retrieved, user is not logged in\n", cmd.args[0])
+		return fmt.Errorf("user %s could not be retrieved, user is not logged in %w", cmd.args[0], definederrors.ErrorUserNotFound)
+	}
+
 	state.Cfg.SetUser(cmd.args[0], w)
 	fmt.Fprintf(w, "user %s is now logged in\n", cmd.args[0])
 	return nil
@@ -93,7 +99,7 @@ func handlerRegisterUser(cmd enteredCommand, w io.Writer, state *database.State)
 		return fmt.Errorf("args passed into handlerCreateUser %v %w", cmd.args, definederrors.ErrorWrongNumArgs)
 	}
 	params := database.CreateUserParams{
-		ID:        uuid.UUID{},
+		ID:        uuid.New(),
 		CreatedAt: time.Now(),
 		UpdatedAt: time.Now(),
 		Name:      cmd.args[0],

@@ -22,3 +22,14 @@ func UnwrapPqErr(err error) (isPQErr bool, pqErr *pq.Error, rawErr error) {
 	}
 	return false, nil, err
 }
+
+func CheckUnwrappedError(got, want error) (isUnwrapMatch bool) {
+	processedErr := got
+	for processedErr != nil {
+		if errors.Is(got, want) {
+			return true
+		}
+		processedErr = errors.Unwrap(processedErr)
+	}
+	return false
+}

@@ -139,12 +139,7 @@ func TestRegisterHandler(t *testing.T) {
 		},
 	}
 
-	commandsPtr := InitCommands()
-	commandsPtr.registerAllHandlers()
-	state, err := database.CreateDBConnection()
-	testutils.AssertNoErr(err, t)
-	resetErr := state.Db.ResetUsers(context.Background())
-	testutils.AssertNoErr(resetErr, t)
+	commandsPtr, state := initCommandsAndState(t)
 
 	for _, test := range tests {
 
@@ -174,8 +169,83 @@ func TestRegisterHandler(t *testing.T) {
 		})
 	}
 
-	// configAfterSetUser, err := config.Read()
-	// testutils.AssertNoErr(err, t)
-	// testutils.AssertStrings(configAfterSetUser.CurrentUserName, "nindgabeet", t)
+}
 
+func TestLoginHandler(t *testing.T) {
+	type testStruct struct {
+		name             string
+		args             []string
+		registerUserArgs []string
+		expectedOutputs  []string
+		isErrExpected    bool
+		expectedErr      error
+	}
+
+	tests := []testStruct{
+		{
+			name:             "test user doesn't exist",
+			args:             []string{"test-program", "login", "noExist"},
+			registerUserArgs: []string{},
+			isErrExpected:    true,
+			expectedOutputs:  []string{"user noExist could not be retrieved, user is not logged in"},
+			expectedErr:      definederrors.ErrorUserNotFound,
+		},
+		{
+			name:             "test user nindgabeet exist",
+			args:             []string{"test-program", "login", "nindgabeet"},
+			registerUserArgs: []string{"test-program", "register", "nindgabeet"},
+			isErrExpected:    false,
+			expectedOutputs: []string{
+				"user nindgabeet has been added",
+				"user nindgabeet is now logged in",
+			},
+			expectedErr: nil,
+		},
+	}
+	commandsPtr, state := initCommandsAndState(t)
+	resetErr := state.Db.ResetUsers(context.Background())
+	testutils.AssertNoErr(resetErr, t)
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			buf := bytes.Buffer{}
+			switch test.isErrExpected {
+			case true:
+				cmd, err := ParseCommand(test.args)
+				testutils.AssertNoErr(err, t)
+				execErr := commandsPtr.ExecCommand(cmd, &buf, state)
+				isErrMatch := errorutils.CheckUnwrappedError(execErr, test.expectedErr)
+				if !isErrMatch {
+					t.Errorf("got: %v\nwant: %v", execErr, test.expectedErr)
+				}
+			case false:
+				registerCmd, err := ParseCommand(test.registerUserArgs)
+				testutils.AssertNoErr(err, t)
+				execErr := commandsPtr.ExecCommand(registerCmd, &buf, state)
+				testutils.AssertNoErr(execErr, t)
+				loginCmd, err := ParseCommand(test.args)
+				testutils.AssertNoErr(err, t)
+				loginExecErr := commandsPtr.ExecCommand(loginCmd, &buf, state)
+				testutils.AssertNoErr(loginExecErr, t)
+			}
+			linesInBuf := []string{}
+			scanner := bufio.NewScanner(&buf)
+			for scanner.Scan() {
+				linesInBuf = append(linesInBuf, scanner.Text())
+			}
+			if len(linesInBuf) != len(test.expectedOutputs) {
+				t.Fatalf("num lines in buf: %d\n numlines in expectedOutputs: %d", len(linesInBuf), len(test.expectedOutputs))
+			}
+		})
+	}
+}
+
+func initCommandsAndState(t *testing.T) (*commands, *database.State) {
+	commandsPtr := InitCommands()
+	commandsPtr.registerAllHandlers()
+	state, err := database.CreateDBConnection()
+	testutils.AssertNoErr(err, t)
+	resetErr := state.Db.ResetUsers(context.Background())
+	testutils.AssertNoErr(resetErr, t)
+	return commandsPtr, state
 }

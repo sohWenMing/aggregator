@@ -74,6 +74,7 @@ func initAllNameToHandlers() []nameToHandler {
 	returnedNameToHandlers := []nameToHandler{
 		{"login", handlerLogin},
 		{"register", handlerRegisterUser},
+		{"reset", handlerResetDatabase},
 	}
 	return returnedNameToHandlers
 
@@ -117,6 +118,11 @@ func handlerRegisterUser(cmd enteredCommand, w io.Writer, state *database.State)
 	}
 	fmt.Fprintf(w, "user %s has been added\n", cmd.args[0])
 	state.Cfg.SetUser(cmd.args[0], w)
+	return nil
+}
+
+func handlerResetDatabase(cmd enteredCommand, w io.Writer, state *database.State) (err error) {
+	state.Db.ResetUsers(context.Background())
 	return nil
 }
 

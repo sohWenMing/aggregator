@@ -79,13 +79,13 @@ func initAllNameToHandlers() []nameToHandler {
 		{"reset", handlerResetDatabase},
 		{"users", handlerGetUsers},
 		{"agg", handlerAgg},
-		{"addfeed", handlerAddFeed},
+		{"addfeed", middleWareLoggedIn(handlerAddFeed)},
 		{"feeds", handlerGetFeeds},
-		{"follow", handlerAddFeedFollow},
-		{"following", handlerGetFeedFollowsForUser},
+		{"follow", middleWareLoggedIn(handlerAddFeedFollow)},
+		{"following", middleWareLoggedIn(handlerGetFeedFollowsForUser)},
+		{"unfollow", middleWareLoggedIn(handlerRemoveFeedFollow)},
 	}
 	return returnedNameToHandlers
-
 }
 
 func handlerGetUsers(_ enteredCommand, w io.Writer, state *database.State) (err error) {
@@ -117,13 +117,15 @@ func handlerLogin(cmd enteredCommand, w io.Writer, state *database.State) (retri
 	if len(cmd.args) != 1 {
 		return fmt.Errorf("args passed into handlerLogin %v %w", cmd.args, definederrors.ErrorWrongNumArgs)
 	}
-	_, err := state.Db.RetrieveUser(context.Background(), cmd.args[0])
+	loggedInUser, err := state.Db.RetrieveUser(context.Background(), cmd.args[0])
 	if err != nil {
 		fmt.Fprintf(w, "user %s could not be retrieved, user is not logged in\n", cmd.args[0])
 		return fmt.Errorf("user %s could not be retrieved, user is not logged in %w", cmd.args[0], definederrors.ErrorUserNotFound)
 	}
 
 	state.Cfg.SetUser(cmd.args[0], w)
+	state.Cfg.CurrentUser.ID = loggedInUser.ID
+	state.Cfg.CurrentUser.Name = loggedInUser.Name
 	fmt.Fprintf(w, "user %s is now logged in\n", cmd.args[0])
 	return nil
 }
@@ -138,7 +140,7 @@ func handlerRegisterUser(cmd enteredCommand, w io.Writer, state *database.State)
 		UpdatedAt: time.Now(),
 		Name:      cmd.args[0],
 	}
-	_, createErr := state.Db.CreateUser(context.Background(), params)
+	createdUser, createErr := state.Db.CreateUser(context.Background(), params)
 	if createErr != nil {
 		isPQErr, pqErr, rawErr := errorutils.UnwrapPqErr(createErr)
 		if isPQErr {
@@ -151,6 +153,8 @@ func handlerRegisterUser(cmd enteredCommand, w io.Writer, state *database.State)
 	}
 	fmt.Fprintf(w, "user %s has been added\n", cmd.args[0])
 	state.Cfg.SetUser(cmd.args[0], w)
+	state.Cfg.CurrentUser.ID = createdUser.ID
+	state.Cfg.CurrentUser.Name = createdUser.Name
 	return nil
 }
 
@@ -179,6 +183,35 @@ func handlerTest(cmd enteredCommand, w io.Writer, state *database.State) (err er
 	return nil
 }
 
+func middleWareLoggedIn(enteredHandler handler) (returnedHandler handler) {
+	return func(cmd enteredCommand, w io.Writer, state *database.State) (err error) {
+		loggedInUser, err := state.Db.RetrieveUser(context.Background(), state.Cfg.CurrentUserName)
+		if err != nil {
+			fmt.Printf("user with username %s could not be found in database", state.Cfg.CurrentUserName)
+			return err
+		}
+		state.Cfg.CurrentUser.ID = loggedInUser.ID
+		state.Cfg.CurrentUser.Name = loggedInUser.Name
+		return enteredHandler(cmd, w, state)
+	}
+}
+
+func handlerRemoveFeedFollow(cmd enteredCommand, w io.Writer, state *database.State) (err error) {
+	if len(cmd.args) != 1 {
+		return fmt.Errorf("wrong num args passed into handlerRemoveFeedFollow, %v %w", cmd.args, definederrors.ErrorWrongNumArgs)
+	}
+	params := database.DeleteFeedFollowParams{
+		UserID: state.Cfg.CurrentUser.ID,
+		Url:    cmd.args[0],
+	}
+	deleteErr := state.Db.DeleteFeedFollow(context.Background(), params)
+	if deleteErr != nil {
+		return fmt.Errorf("error occured when attempting to remove feed follow")
+	}
+	return nil
+
+}
+
 func handlerAddFeed(cmd enteredCommand, w io.Writer, state *database.State) (err error) {
 	if len(cmd.args) != 2 {
 		return fmt.Errorf("wrong num args passed into handlerAddFeed %v %w", cmd.args, definederrors.ErrorWrongNumArgs)
@@ -196,11 +229,11 @@ func handlerAddFeed(cmd enteredCommand, w io.Writer, state *database.State) (err
 			return fetchFeedErr
 		}
 	}
-	loggedInUser, err := state.Db.RetrieveUser(context.Background(), state.Cfg.CurrentUserName)
-	if err != nil {
-		fmt.Fprintf(w, "user %s not found in database\n", state.Cfg.CurrentUserName)
-		return fmt.Errorf("user %s not found in database %w", state.Cfg.CurrentUserName, definederrors.ErrorUserNotFound)
-	}
+	// loggedInUser, err := state.Db.RetrieveUser(context.Background(), state.Cfg.CurrentUserName)
+	// if err != nil {
+	// 	fmt.Fprintf(w, "user %s not found in database\n", state.Cfg.CurrentUserName)
+	// 	return fmt.Errorf("user %s not found in database %w", state.Cfg.CurrentUserName, definederrors.ErrorUserNotFound)
+	// }
 	rssFeed, err := state.Db.CreateFeed(context.Background(),
 		database.CreateFeedParams{
 			ID:        uuid.New(),
@@ -208,7 +241,7 @@ func handlerAddFeed(cmd enteredCommand, w io.Writer, state *database.State) (err
 			UpdatedAt: time.Now(),
 			Name:      feedName,
 			Url:       feedUrl,
-			UserID:    loggedInUser.ID,
+			UserID:    state.Cfg.CurrentUser.ID,
 		})
 	if err != nil {
 		fmt.Fprint(w, "error occured when trying to add RssFeed to database")
@@ -220,7 +253,7 @@ func handlerAddFeed(cmd enteredCommand, w io.Writer, state *database.State) (err
 		ID:        uuid.New(),
 		CreatedAt: time.Now(),
 		UpdatedAt: time.Now(),
-		UserID:    loggedInUser.ID,
+		UserID:    state.Cfg.CurrentUser.ID,
 		FeedID:    rssFeed.ID,
 	}
 
@@ -261,12 +294,6 @@ func handlerAddFeedFollow(cmd enteredCommand, w io.Writer, state *database.State
 		return definederrors.ErrorWrongNumArgs
 	}
 
-	//first, need to get the user id from the db
-	currUser, err := retrieveUserFromDB(state, w)
-	if err != nil {
-		return err
-	}
-	currUserId := currUser.ID
 	feedId, err := state.Db.GetFeedIdByURL(context.Background(), cmd.args[0])
 	if err != nil {
 		fmt.Fprintf(w, "feed with url %s could not be found", cmd.args[0])
@@ -276,7 +303,7 @@ func handlerAddFeedFollow(cmd enteredCommand, w io.Writer, state *database.State
 		ID:        uuid.New(),
 		CreatedAt: time.Now(),
 		UpdatedAt: time.Now(),
-		UserID:    currUserId,
+		UserID:    state.Cfg.CurrentUser.ID,
 		FeedID:    feedId,
 	}
 
@@ -295,16 +322,13 @@ func handlerGetFeedFollowsForUser(cmd enteredCommand, w io.Writer, state *databa
 		fmt.Fprint(w, definederrors.ErrorWrongNumArgs.Error())
 		return err
 	}
-	currUser, err := retrieveUserFromDB(state, w)
-	if err != nil {
-		return err
-	}
-	feeds, err := state.Db.GetFeedFollowForUser(context.Background(), currUser.ID)
+
+	feeds, err := state.Db.GetFeedFollowForUser(context.Background(), state.Cfg.CurrentUser.ID)
 	if err != nil {
 		fmt.Fprintln(w, err.Error())
 		return err
 	}
-	fmt.Fprintf(w, "feeds followed by user %s\n", currUser.Name)
+	fmt.Fprintf(w, "feeds followed by user %s\n", state.Cfg.CurrentUserName)
 	for _, feed := range feeds {
 		fmt.Fprintf(w, "* %s - %s\n", feed.FeedName, feed.FeedUrl)
 	}
@@ -338,15 +362,6 @@ func fetchFeed(feedURL string, state *database.State) (feed *rss_parsing.RSSFeed
 
 }
 
-func retrieveUserFromDB(state *database.State, w io.Writer) (database.User, error) {
-	currUser, err := state.Db.RetrieveUser(context.Background(), state.Cfg.CurrentUserName)
-	if err != nil {
-		fmt.Fprintf(w, "user %s could not be retrieved from database", state.Cfg.CurrentUserName)
-		return database.User{}, err
-	}
-	return currUser, nil
-}
-
 // called at the main program, used to initialise the commandMap so that it can be written to
 func InitCommands() (commandsPtr *commands) {
 	returnedCommands := commands{}
@@ -365,16 +380,15 @@ func ParseCommand(args []string) (cmd enteredCommand, err error) {
 			fmt.Errorf("no arguments passed into ParseCommand %w",
 				definederrors.ErrorNoArgs)
 	case 1:
-		if args[0] != "agg" {
-			return returnedCmd,
-				fmt.Errorf("only one arguement passed into ParseCommand arg:%s %w",
-					args[0], definederrors.ErrorWrongNumArgs)
-		}
-		returnedCmd.name = strings.ToLower(args[1])
-		returnedCmd.args = []string{}
-		return returnedCmd, nil
+		return returnedCmd,
+			fmt.Errorf("only one arguement passed into ParseCommand arg:%s %w",
+				args[0], definederrors.ErrorWrongNumArgs)
+
 	default:
 		returnedCmd.name = strings.ToLower(args[1])
+		if len(args) == 2 {
+			return returnedCmd, nil
+		}
 		returnedCmd.args = args[2:]
 		return returnedCmd, nil
 	}

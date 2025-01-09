@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -394,16 +395,17 @@ func TestHandlerAddFeedFollow(t *testing.T) {
 
 	//register the user holgith
 	registerUser(t, commands, state, "holgith")
-
+	fmt.Printf("state current User %v", state.Cfg.CurrentUser)
 	//as user holgith, add the feed
 	addFeed(t, commands, state, "Lanes Blog", "https://www.wagslane.dev/index.xml")
 	follow(t, commands, state, "https://hnrss.org/newest")
 
 	bufHolgith := runFollowing(t, commands, state)
+
 	holgithExpectedStrings := []string{
 		"holgith",
-		"Hacker News RSS",
 		"Lanes Blog",
+		"Hacker News RSS",
 	}
 	processBufAndAssertStrings(t, bufHolgith, holgithExpectedStrings)
 

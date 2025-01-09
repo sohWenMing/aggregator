@@ -6,12 +6,17 @@ import (
 	"io"
 	"os"
 
+	"github.com/google/uuid"
 	definederrors "github.com/sohWenMing/aggregator/defined_errors"
 )
 
 type Config struct {
 	DbUrl           string `json:"db_url"`
 	CurrentUserName string `json:"current_user_name"`
+	CurrentUser     struct {
+		ID   uuid.UUID
+		Name string
+	}
 }
 
 func (c *Config) SetUser(username string, w io.Writer) (err error) {

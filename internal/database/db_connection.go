@@ -2,14 +2,16 @@ package database
 
 import (
 	"database/sql"
+	"net/http"
 
 	_ "github.com/lib/pq"
 	"github.com/sohWenMing/aggregator/internal/config"
 )
 
 type State struct {
-	Db  *Queries
-	Cfg *config.Config
+	Db     *Queries
+	Cfg    *config.Config
+	Client *http.Client
 }
 
 func CreateDBConnection() (state *State, err error) {
@@ -25,8 +27,9 @@ func CreateDBConnection() (state *State, err error) {
 	queries := New(db)
 
 	newState := State{
-		Db:  queries,
-		Cfg: config,
+		Db:     queries,
+		Cfg:    config,
+		Client: &http.Client{},
 	}
 	return &newState, nil
 

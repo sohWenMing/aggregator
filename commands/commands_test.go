@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"strings"
 	"testing"
 
 	definederrors "github.com/sohWenMing/aggregator/defined_errors"
@@ -94,13 +95,23 @@ func TestInitAndExecCommand(t *testing.T) {
 
 func TestExecCommands(t *testing.T) {
 
-	commandsPtr := InitCommands()
-	commandsPtr.registerAllHandlers()
+	commandsPtr, state := initCommandsAndState(t)
+	resetErr := state.Db.ResetUsers(context.Background())
+	testutils.AssertNoErr(resetErr, t)
+
+	//register nindgabeet
+
+	registerArgs := []string{"test-program", "register", "nindgabeet"}
+	registerCmd, err := ParseCommand(registerArgs)
+	testutils.AssertNoErr(err, t)
+	registerBuf := bytes.Buffer{}
+	registerExecError := commandsPtr.ExecCommand(registerCmd, &registerBuf, state)
+	testutils.AssertNoErr(registerExecError, t)
+
+	//login nindgabeet
 	args := []string{"test-program", "LogIn", "nindgabeet"}
 	cmd, err := ParseCommand(args)
 	testutils.AssertNoErr(err, t)
-
-	state, err := database.CreateDBConnection()
 	testutils.AssertNoErr(err, t)
 	buf := bytes.Buffer{}
 	execError := commandsPtr.ExecCommand(cmd, &buf, state)
@@ -273,9 +284,25 @@ func TestGetUsers(t *testing.T) {
 	for i, lineInBuf := range linesInBuf {
 		testutils.AssertStrings(lineInBuf, expected[i], t)
 	}
-
 }
 
+func TestHandlerAgg(t *testing.T) {
+	commandsPtr, state := initCommandsAndState(t)
+	buf := bytes.Buffer{}
+	handlerAggCmd, err := ParseCommand([]string{"test-program", "agg"})
+
+	testutils.AssertNoErr(err, t)
+	aggErr := commandsPtr.ExecCommand(handlerAggCmd, &buf, state)
+	testutils.AssertNoErr(aggErr, t)
+	if !strings.Contains(buf.String(), "The Zen of Proverbs") {
+		t.Errorf("buffer should have %q written to it\n", "The Zen of Proverbs")
+	}
+
+	if !strings.Contains(buf.String(), "Optimize for simplicity") {
+		t.Errorf("buffer should have %q written to it\n", "Optimize for simplicity")
+	}
+
+}
 func initCommandsAndState(t *testing.T) (*commands, *database.State) {
 	commandsPtr := InitCommands()
 	commandsPtr.registerAllHandlers()

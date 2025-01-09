@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"net/http"
 	"strings"
 	"time"
 
@@ -11,6 +12,7 @@ import (
 	definederrors "github.com/sohWenMing/aggregator/defined_errors"
 	errorutils "github.com/sohWenMing/aggregator/error_utils"
 	"github.com/sohWenMing/aggregator/internal/database"
+	"github.com/sohWenMing/aggregator/rss_parsing"
 )
 
 type handler func(cmd enteredCommand, w io.Writer, state *database.State) (err error)
@@ -76,6 +78,7 @@ func initAllNameToHandlers() []nameToHandler {
 		{"register", handlerRegisterUser},
 		{"reset", handlerResetDatabase},
 		{"users", handlerGetUsers},
+		{"agg", handlerAgg},
 	}
 	return returnedNameToHandlers
 
@@ -152,11 +155,45 @@ func handlerResetDatabase(cmd enteredCommand, w io.Writer, state *database.State
 	return nil
 }
 
+func handlerAgg(cmd enteredCommand, w io.Writer, state *database.State) (err error) {
+	feedUrl := "https://www.wagslane.dev/index.xml"
+	feed, err := fetchFeed(feedUrl, state)
+	if err != nil {
+		return err
+
+	}
+	fmt.Fprintf(w, "%v", *feed)
+	return nil
+}
+
 func handlerTest(cmd enteredCommand, w io.Writer, state *database.State) (err error) {
 	for _, arg := range cmd.args {
 		fmt.Fprintln(w, arg)
 	}
 	return nil
+}
+
+func fetchFeed(feedURL string, state *database.State) (feed *rss_parsing.RSSFeed, err error) {
+
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, feedURL, nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("user-agent", "gator")
+	res, err := state.Client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	resBody, err := io.ReadAll(res.Body)
+	if err != nil {
+		return nil, err
+	}
+	rssFeed, err := rss_parsing.ParseRSS(resBody)
+	if err != nil {
+		return nil, err
+	}
+	return &rssFeed, nil
+
 }
 
 // called at the main program, used to initialise the commandMap so that it can be written to
@@ -177,9 +214,14 @@ func ParseCommand(args []string) (cmd enteredCommand, err error) {
 			fmt.Errorf("no arguments passed into ParseCommand %w",
 				definederrors.ErrorNoArgs)
 	case 1:
-		return returnedCmd,
-			fmt.Errorf("only one arguement passed into ParseCommand arg:%s %w",
-				args[0], definederrors.ErrorWrongNumArgs)
+		if args[0] != "agg" {
+			return returnedCmd,
+				fmt.Errorf("only one arguement passed into ParseCommand arg:%s %w",
+					args[0], definederrors.ErrorWrongNumArgs)
+		}
+		returnedCmd.name = strings.ToLower(args[1])
+		returnedCmd.args = []string{}
+		return returnedCmd, nil
 	default:
 		returnedCmd.name = strings.ToLower(args[1])
 		returnedCmd.args = args[2:]

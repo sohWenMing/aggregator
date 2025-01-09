@@ -301,15 +301,190 @@ func TestHandlerAgg(t *testing.T) {
 	if !strings.Contains(buf.String(), "Optimize for simplicity") {
 		t.Errorf("buffer should have %q written to it\n", "Optimize for simplicity")
 	}
+}
+
+func TestHandlerAddFeed(t *testing.T) {
+	commandsPtr, state := initCommandsAndState(t)
+	defer state.Db.ResetUsers(context.Background())
+	defer state.Db.ResetFeeds(context.Background())
+	registerCmd, err := ParseCommand([]string{"test-program", "register", "nindgabeet"})
+	testutils.AssertNoErr(err, t)
+
+	registerBuf := bytes.Buffer{}
+
+	registerErr := commandsPtr.ExecCommand(registerCmd, &registerBuf, state)
+	testutils.AssertNoErr(registerErr, t)
+
+	addFeedCmd, err := ParseCommand([]string{"test-program", "addfeed", "Hacker News RSS", "https://hnrss.org/newest"})
+	addFeedBuf := bytes.Buffer{}
+	testutils.AssertNoErr(err, t)
+	addFeedErr := commandsPtr.ExecCommand(addFeedCmd, &addFeedBuf, state)
+	testutils.AssertNoErr(addFeedErr, t)
+
+	gotString := addFeedBuf.String()
+	if !strings.Contains(gotString, "Hacker News RSS") || !strings.Contains(gotString, "https://hnrss.org/newest") {
+		t.Errorf("returned values should contain %q and %q\n", "Hacker News RSS", "https://hnrss.org/newest")
+	}
+}
+
+func TestHandlerGetFeeds(t *testing.T) {
+	commandsPtr, state := initCommandsAndState(t)
+	defer state.Db.ResetUsers(context.Background())
+	defer state.Db.ResetFeeds(context.Background())
+
+	registerCmd, err := ParseCommand([]string{"test-program", "register", "nindgabeet"})
+	testutils.AssertNoErr(err, t)
+
+	registerBuf := bytes.Buffer{}
+
+	registerErr := commandsPtr.ExecCommand(registerCmd, &registerBuf, state)
+	testutils.AssertNoErr(registerErr, t)
+
+	addFeedCmd, err := ParseCommand([]string{"test-program", "addfeed", "Hacker News RSS", "https://hnrss.org/newest"})
+	addFeedBuf := bytes.Buffer{}
+	testutils.AssertNoErr(err, t)
+	addFeedErr := commandsPtr.ExecCommand(addFeedCmd, &addFeedBuf, state)
+	testutils.AssertNoErr(addFeedErr, t)
+
+	addFeedCmd2, err := ParseCommand([]string{"test-program", "addfeed", "Lanes Blog", "https://www.wagslane.dev/index.xml"})
+	addFeedBuf2 := bytes.Buffer{}
+	testutils.AssertNoErr(err, t)
+	addFeedErr2 := commandsPtr.ExecCommand(addFeedCmd2, &addFeedBuf2, state)
+	testutils.AssertNoErr(addFeedErr2, t)
+
+	getFeedsCmd, err := ParseCommand([]string{"test-program", "feeds"})
+	feedsBuf := bytes.Buffer{}
+	testutils.AssertNoErr(err, t)
+	getFeedsErr := commandsPtr.ExecCommand(getFeedsCmd, &feedsBuf, state)
+	testutils.AssertNoErr(getFeedsErr, t)
+
+	bufStrings := []string{}
+	scanner := bufio.NewScanner(&feedsBuf)
+	for scanner.Scan() {
+		bufStrings = append(bufStrings, scanner.Text())
+	}
+	testutils.AssertInts(len(bufStrings), 2, t)
 
 }
+
+func TestHandlerAddFeedFollow(t *testing.T) {
+
+	/*
+		The setup should involve
+		1. create a user called kahya (who will be logged in)
+		2. add the feed for "Hacker News RSS" "https://hnrss.org/newest"
+		3. create a user called holgith (who will be logged in)
+		4. add the feed for "Lanes Blog" "https://www.wagslane.dev/index.xml"
+		5. Holgith should then follow "https://hnrss.org/newest"
+		6. Login kahya
+		7. Kahya should then follow "https://www.wagslane.dev/index.xml"
+		8. Get all the following
+	*/
+
+	commands, state := initCommandsAndState(t)
+
+	defer state.Db.ResetUsers(context.Background())
+	defer state.Db.ResetFeeds(context.Background())
+
+	//first, register the user kahya
+	registerUser(t, commands, state, "kahya")
+
+	//as user kahya, add the feed
+	addFeed(t, commands, state, "Hacker News RSS", "https://hnrss.org/newest")
+
+	//register the user holgith
+	registerUser(t, commands, state, "holgith")
+
+	//as user holgith, add the feed
+	addFeed(t, commands, state, "Lanes Blog", "https://www.wagslane.dev/index.xml")
+	follow(t, commands, state, "https://hnrss.org/newest")
+
+	bufHolgith := runFollowing(t, commands, state)
+	holgithExpectedStrings := []string{
+		"holgith",
+		"Hacker News RSS",
+		"Lanes Blog",
+	}
+	processBufAndAssertStrings(t, bufHolgith, holgithExpectedStrings)
+
+	doLogin(t, commands, state, "kahya")
+	bufKahya := runFollowing(t, commands, state)
+	kahyaExpectedStrings := []string{
+		"kahya",
+		"Hacker News RSS",
+	}
+	processBufAndAssertStrings(t, bufKahya, kahyaExpectedStrings)
+
+}
+
+func processBufAndAssertStrings(t *testing.T, buf bytes.Buffer, expectedStrings []string) {
+	scanner := bufio.NewScanner(&buf)
+	gotStrings := []string{}
+	for scanner.Scan() {
+		gotStrings = append(gotStrings, scanner.Text())
+	}
+	assertStringsContain(t, gotStrings, expectedStrings)
+}
+
+func assertStringsContain(t *testing.T, gotStrings []string, expectedStrings []string) {
+	for i, line := range gotStrings {
+		if !strings.Contains(line, expectedStrings[i]) {
+			t.Errorf("didn't find expected substring. line: %s substring: %s", line, expectedStrings[i])
+		}
+	}
+}
+
+func doLogin(t *testing.T, commands *commands, state *database.State, username string) {
+	loginCmd, err := ParseCommand([]string{"test-program", "login", username})
+	testutils.AssertNoErr(err, t)
+	loginBuf := bytes.Buffer{}
+	loginErr := commands.ExecCommand(loginCmd, &loginBuf, state)
+	testutils.AssertNoErr(loginErr, t)
+}
+
+func runFollowing(t *testing.T, commands *commands, state *database.State) (buf bytes.Buffer) {
+	followingCmd, err := ParseCommand([]string{"test-program", "following"})
+	testutils.AssertNoErr(err, t)
+	followingBuf := bytes.Buffer{}
+	followingErr := commands.ExecCommand(followingCmd, &followingBuf, state)
+	testutils.AssertNoErr(followingErr, t)
+	return followingBuf
+
+}
+
+func follow(t *testing.T, commands *commands, state *database.State, feedUrl string) {
+	followCmd, err := ParseCommand([]string{"test-program", "follow", feedUrl})
+	testutils.AssertNoErr(err, t)
+	followBuf := bytes.Buffer{}
+	followErr := commands.ExecCommand(followCmd, &followBuf, state)
+	testutils.AssertNoErr(followErr, t)
+}
+
+func addFeed(t *testing.T, commands *commands, state *database.State, feedname, feedURL string) {
+	addFeedCmd, err := ParseCommand([]string{"test-program", "addfeed", feedname, feedURL})
+	testutils.AssertNoErr(err, t)
+	addFeedBuf := bytes.Buffer{}
+	addFeedErr := commands.ExecCommand(addFeedCmd, &addFeedBuf, state)
+	testutils.AssertNoErr(addFeedErr, t)
+}
+
+func registerUser(t *testing.T, commands *commands, state *database.State, username string) {
+	registerCmd, err := ParseCommand([]string{"test-program", "register", username})
+	testutils.AssertNoErr(err, t)
+	registerBuf := bytes.Buffer{}
+	registerErr := commands.ExecCommand(registerCmd, &registerBuf, state)
+	testutils.AssertNoErr(registerErr, t)
+}
+
 func initCommandsAndState(t *testing.T) (*commands, *database.State) {
 	commandsPtr := InitCommands()
 	commandsPtr.registerAllHandlers()
 	state, err := database.CreateDBConnection()
 	testutils.AssertNoErr(err, t)
-	resetErr := state.Db.ResetUsers(context.Background())
-	testutils.AssertNoErr(resetErr, t)
+	resetUsersErr := state.Db.ResetUsers(context.Background())
+	testutils.AssertNoErr(resetUsersErr, t)
+	resetFeedsErr := state.Db.ResetFeeds(context.Background())
+	testutils.AssertNoErr(resetFeedsErr, t)
 	return commandsPtr, state
 }
 

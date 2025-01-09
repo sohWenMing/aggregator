@@ -79,6 +79,10 @@ func initAllNameToHandlers() []nameToHandler {
 		{"reset", handlerResetDatabase},
 		{"users", handlerGetUsers},
 		{"agg", handlerAgg},
+		{"addfeed", handlerAddFeed},
+		{"feeds", handlerGetFeeds},
+		{"follow", handlerAddFeedFollow},
+		{"following", handlerGetFeedFollowsForUser},
 	}
 	return returnedNameToHandlers
 
@@ -175,9 +179,141 @@ func handlerTest(cmd enteredCommand, w io.Writer, state *database.State) (err er
 	return nil
 }
 
+func handlerAddFeed(cmd enteredCommand, w io.Writer, state *database.State) (err error) {
+	if len(cmd.args) != 2 {
+		return fmt.Errorf("wrong num args passed into handlerAddFeed %v %w", cmd.args, definederrors.ErrorWrongNumArgs)
+	}
+	feedName := cmd.args[0]
+	feedUrl := cmd.args[1]
+	_, fetchFeedErr := fetchFeed(feedUrl, state)
+	if fetchFeedErr != nil {
+		switch errorutils.CheckErrTypeMatch(fetchFeedErr, context.DeadlineExceeded) {
+		case true:
+			fmt.Fprintf(w, "The request to %s timed out", feedUrl)
+			return fetchFeedErr
+		case false:
+			fmt.Fprint(w, fetchFeedErr.Error())
+			return fetchFeedErr
+		}
+	}
+	loggedInUser, err := state.Db.RetrieveUser(context.Background(), state.Cfg.CurrentUserName)
+	if err != nil {
+		fmt.Fprintf(w, "user %s not found in database\n", state.Cfg.CurrentUserName)
+		return fmt.Errorf("user %s not found in database %w", state.Cfg.CurrentUserName, definederrors.ErrorUserNotFound)
+	}
+	rssFeed, err := state.Db.CreateFeed(context.Background(),
+		database.CreateFeedParams{
+			ID:        uuid.New(),
+			CreatedAt: time.Now(),
+			UpdatedAt: time.Now(),
+			Name:      feedName,
+			Url:       feedUrl,
+			UserID:    loggedInUser.ID,
+		})
+	if err != nil {
+		fmt.Fprint(w, "error occured when trying to add RssFeed to database")
+		return err
+	}
+	fmt.Fprintf(w, "rss feed values: %v", rssFeed)
+
+	params := database.CreateFeedFollowParams{
+		ID:        uuid.New(),
+		CreatedAt: time.Now(),
+		UpdatedAt: time.Now(),
+		UserID:    loggedInUser.ID,
+		FeedID:    rssFeed.ID,
+	}
+
+	_, feedFollowErr := state.Db.CreateFeedFollow(context.Background(), params)
+	if feedFollowErr != nil {
+		fmt.Fprint(w, "error occured when attempting to create feedFollow")
+		return feedFollowErr
+	}
+	return nil
+
+}
+
+func handlerGetFeeds(cmd enteredCommand, w io.Writer, state *database.State) (err error) {
+	if len(cmd.args) != 0 {
+		return definederrors.ErrorWrongNumArgs
+	}
+	feeds, err := state.Db.GetFeeds(context.Background())
+	if err != nil {
+		isPqErr, pqErr, rawErr := errorutils.UnwrapPqErr(err)
+		if isPqErr {
+			fmt.Fprintf(w, "pqerr error code: %s", string(pqErr.Code))
+			return pqErr
+		}
+		fmt.Fprintln(w, "error occured while getting feeds")
+		return rawErr
+	}
+	for _, feed := range feeds {
+		feedInfo := fmt.Sprintf("feed name: %s feed url: %s user name: %s\n", feed.Feedname, feed.Feedurl, feed.Username)
+		fmt.Fprint(w, feedInfo)
+	}
+	return nil
+}
+
+func handlerAddFeedFollow(cmd enteredCommand, w io.Writer, state *database.State) (err error) {
+
+	if len(cmd.args) != 1 {
+		fmt.Fprint(w, definederrors.ErrorWrongNumArgs.Error())
+		return definederrors.ErrorWrongNumArgs
+	}
+
+	//first, need to get the user id from the db
+	currUser, err := retrieveUserFromDB(state, w)
+	if err != nil {
+		return err
+	}
+	currUserId := currUser.ID
+	feedId, err := state.Db.GetFeedIdByURL(context.Background(), cmd.args[0])
+	if err != nil {
+		fmt.Fprintf(w, "feed with url %s could not be found", cmd.args[0])
+		return err
+	}
+	params := database.CreateFeedFollowParams{
+		ID:        uuid.New(),
+		CreatedAt: time.Now(),
+		UpdatedAt: time.Now(),
+		UserID:    currUserId,
+		FeedID:    feedId,
+	}
+
+	feedFollowRow, err := state.Db.CreateFeedFollow(context.Background(), params)
+	if err != nil {
+		fmt.Fprint(w, "error occured when attempting to create feedFollow")
+		return err
+	}
+	fmt.Fprintf(w, "%s is now following %s\n", feedFollowRow.UserName, feedFollowRow.FeedName)
+	return nil
+
+}
+
+func handlerGetFeedFollowsForUser(cmd enteredCommand, w io.Writer, state *database.State) (err error) {
+	if len(cmd.args) != 0 {
+		fmt.Fprint(w, definederrors.ErrorWrongNumArgs.Error())
+		return err
+	}
+	currUser, err := retrieveUserFromDB(state, w)
+	if err != nil {
+		return err
+	}
+	feeds, err := state.Db.GetFeedFollowForUser(context.Background(), currUser.ID)
+	if err != nil {
+		fmt.Fprintln(w, err.Error())
+		return err
+	}
+	fmt.Fprintf(w, "feeds followed by user %s\n", currUser.Name)
+	for _, feed := range feeds {
+		fmt.Fprintf(w, "* %s - %s\n", feed.FeedName, feed.FeedUrl)
+	}
+	return nil
+}
+
 func fetchFeed(feedURL string, state *database.State) (feed *rss_parsing.RSSFeed, err error) {
 
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, feedURL, nil)
@@ -200,6 +336,15 @@ func fetchFeed(feedURL string, state *database.State) (feed *rss_parsing.RSSFeed
 	}
 	return &rssFeed, nil
 
+}
+
+func retrieveUserFromDB(state *database.State, w io.Writer) (database.User, error) {
+	currUser, err := state.Db.RetrieveUser(context.Background(), state.Cfg.CurrentUserName)
+	if err != nil {
+		fmt.Fprintf(w, "user %s could not be retrieved from database", state.Cfg.CurrentUserName)
+		return database.User{}, err
+	}
+	return currUser, nil
 }
 
 // called at the main program, used to initialise the commandMap so that it can be written to

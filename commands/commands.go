@@ -159,8 +159,10 @@ func handlerAgg(cmd enteredCommand, w io.Writer, state *database.State) (err err
 	feedUrl := "https://www.wagslane.dev/index.xml"
 	feed, err := fetchFeed(feedUrl, state)
 	if err != nil {
+		if err == context.DeadlineExceeded {
+			fmt.Fprintf(w, "the operation timed out")
+		}
 		return err
-
 	}
 	fmt.Fprintf(w, "%v", *feed)
 	return nil
@@ -175,7 +177,10 @@ func handlerTest(cmd enteredCommand, w io.Writer, state *database.State) (err er
 
 func fetchFeed(feedURL string, state *database.State) (feed *rss_parsing.RSSFeed, err error) {
 
-	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, feedURL, nil)
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, feedURL, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -184,6 +189,7 @@ func fetchFeed(feedURL string, state *database.State) (feed *rss_parsing.RSSFeed
 	if err != nil {
 		return nil, err
 	}
+	defer res.Body.Close()
 	resBody, err := io.ReadAll(res.Body)
 	if err != nil {
 		return nil, err

@@ -372,7 +372,7 @@ func TestHandlerAddFeedFollow(t *testing.T) {
 
 	/*
 		The setup should involve
-		1. create a user called kahya (who will be logged in)
+		1. create a user called kahya (who will be logged in)cd
 		2. add the feed for "Hacker News RSS" "https://hnrss.org/newest"
 		3. create a user called holgith (who will be logged in)
 		4. add the feed for "Lanes Blog" "https://www.wagslane.dev/index.xml"

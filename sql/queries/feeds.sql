@@ -57,4 +57,18 @@ WHERE feed_follows.user_id = $1
         ON feed_follows.feed_id = feeds.id
      WHERE feeds.url = $2
   );
+
+-- name: MarkFetchedFeed :exec
+UPDATE feeds
+SET updated_at = $1, last_fetched_at = $1
+WHERE feeds.id = $2;
+
+-- name: GetNextFeedToFetch :one
+SELECT feeds.*
+  FROM feed_follows
+  JOIN feeds
+    ON feed_follows.feed_id = feeds.id
+  WHERE feed_follows.user_id = $1
+  ORDER BY feeds.last_fetched_at NULLS FIRST
+  LIMIT 1;
  

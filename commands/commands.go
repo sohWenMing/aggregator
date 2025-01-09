@@ -2,6 +2,7 @@ package commands
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -78,7 +79,7 @@ func initAllNameToHandlers() []nameToHandler {
 		{"register", handlerRegisterUser},
 		{"reset", handlerResetDatabase},
 		{"users", handlerGetUsers},
-		{"agg", handlerAgg},
+		{"agg", middleWareLoggedIn(handlerAgg)},
 		{"addfeed", middleWareLoggedIn(handlerAddFeed)},
 		{"feeds", handlerGetFeeds},
 		{"follow", middleWareLoggedIn(handlerAddFeedFollow)},
@@ -164,16 +165,54 @@ func handlerResetDatabase(cmd enteredCommand, w io.Writer, state *database.State
 }
 
 func handlerAgg(cmd enteredCommand, w io.Writer, state *database.State) (err error) {
-	feedUrl := "https://www.wagslane.dev/index.xml"
-	feed, err := fetchFeed(feedUrl, state)
+	if len(cmd.args) != 1 {
+		fmt.Fprint(w, definederrors.ErrorWrongNumArgs.Error())
+		return definederrors.ErrorWrongNumArgs
+	}
+
+	timeBetweenReqs, err := time.ParseDuration(cmd.args[0])
 	if err != nil {
-		if err == context.DeadlineExceeded {
-			fmt.Fprintf(w, "the operation timed out")
-		}
+		fmt.Fprint(w, err.Error())
 		return err
 	}
-	fmt.Fprintf(w, "%v", *feed)
+
+	ticker := time.NewTicker(timeBetweenReqs)
+	for ; ; <-ticker.C {
+		scrapeErr := scrapeFeeds(w, state)
+		if scrapeErr != nil {
+			fmt.Fprintln(w, scrapeErr.Error())
+		}
+	}
+}
+
+func scrapeFeeds(w io.Writer, state *database.State) (err error) {
+	feedToFetch, err := state.Db.GetNextFeedToFetch(context.Background(), state.Cfg.CurrentUser.ID)
+	if err != nil {
+		fmt.Println("error happened at feedToFetch")
+		return err
+	}
+	params := database.MarkFetchedFeedParams{
+		UpdatedAt: time.Now(),
+		ID:        feedToFetch.ID,
+	}
+	markErr := state.Db.MarkFetchedFeed(context.Background(), params)
+	if markErr != nil {
+		return markErr
+	}
+
+	feed, err := fetchFeed(feedToFetch.Url, state)
+	if err != nil {
+		if err == context.DeadlineExceeded {
+			return errors.New("the operation timed out")
+		}
+	}
+	fmt.Fprintf(w, "Feed Name: %s\n", feed.Channel.Title)
+	items := feed.Channel.RSSItems
+	for _, item := range items {
+		fmt.Fprintf(w, "%v\n", item.Title)
+	}
 	return nil
+
 }
 
 func handlerTest(cmd enteredCommand, w io.Writer, state *database.State) (err error) {

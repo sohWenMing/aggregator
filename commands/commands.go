@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -86,6 +87,7 @@ func initAllNameToHandlers() []nameToHandler {
 		{"follow", middleWareLoggedIn(handlerAddFeedFollow)},
 		{"following", middleWareLoggedIn(handlerGetFeedFollowsForUser)},
 		{"unfollow", middleWareLoggedIn(handlerRemoveFeedFollow)},
+		{"browse", middleWareLoggedIn(handlerGetPostForUser)},
 	}
 	return returnedNameToHandlers
 }
@@ -190,6 +192,47 @@ func handlerAgg(cmd enteredCommand, w io.Writer, state *database.State) (err err
 			fmt.Fprintln(w, scrapeErr.Error())
 		}
 	}
+}
+
+func handlerGetPostForUser(cmd enteredCommand, w io.Writer, state *database.State) (err error) {
+	if len(cmd.args) > 1 {
+		fmt.Fprintln(w, definederrors.ErrorWrongNumArgs.Error())
+		return definederrors.ErrorWrongNumArgs
+	}
+	var limit int32
+	switch len(cmd.args) == 0 {
+	case true:
+		limit = 2
+	default:
+		parsedInt, err := strconv.ParseInt(cmd.args[0], 10, 32)
+		if err != nil {
+			fmt.Fprintf(w, "%s could not be parsed into an acceptable limit integer\n", cmd.args[0])
+			return err
+		}
+		limit = int32(parsedInt)
+	}
+
+	userId := state.Cfg.CurrentUser.ID
+	params := database.GetPostsForUserParams{
+		ID:    userId,
+		Limit: limit,
+	}
+	records, err := state.Db.GetPostsForUser(context.Background(), params)
+	if err != nil {
+		fmt.Fprintln(w, err.Error())
+		return err
+	}
+
+	for _, record := range records {
+		fmt.Fprintln(w, "=======================")
+		fmt.Fprintf(w, "FeedName: %s\n", record.FeedName)
+		fmt.Fprintf(w, "Title: %s\n", record.PostTitle)
+		fmt.Fprintf(w, "FeedName: %s\n", record.PostPublishedOn.Time.UTC())
+		fmt.Fprintf(w, "Content: %s\n", record.PostDescription)
+		fmt.Fprintln(w, "=======================")
+	}
+
+	return nil
 }
 
 func scrapeFeeds(w io.Writer, state *database.State) (err error) {

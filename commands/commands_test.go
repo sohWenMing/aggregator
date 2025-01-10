@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+	"time"
 
 	definederrors "github.com/sohWenMing/aggregator/defined_errors"
 	errorutils "github.com/sohWenMing/aggregator/error_utils"
@@ -417,6 +418,24 @@ func TestHandlerAddFeedFollow(t *testing.T) {
 	}
 	processBufAndAssertStrings(t, bufKahya, kahyaExpectedStrings)
 
+}
+
+func TestRunTestFetchFeed(t *testing.T) {
+	feed, _ := testFetchFeed("https://blog.boot.dev/index.xml")
+	items := feed.Channel.RSSItems
+	for _, item := range items[:3] {
+		fmt.Println("-----------------")
+		fmt.Printf("Title: %s\n", item.Title)
+		fmt.Printf("Link: %s\n", item.Link)
+		fmt.Printf("Description: %s\n", item.Description)
+		fmt.Printf("PubDate: %s\n", item.PubDate)
+		fmt.Println("-----------------")
+		pubDate, err := time.Parse(time.RFC1123Z, item.PubDate)
+		if err != nil {
+			fmt.Print(err.Error())
+		}
+		fmt.Println(pubDate)
+	}
 }
 
 func processBufAndAssertStrings(t *testing.T, buf bytes.Buffer, expectedStrings []string) {

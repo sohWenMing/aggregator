@@ -3,6 +3,8 @@ package rss_parsing
 import (
 	"encoding/xml"
 	"html"
+
+	"github.com/microcosm-cc/bluemonday"
 )
 
 type RSSFeed struct {
@@ -23,14 +25,16 @@ type RSSItem struct {
 
 func ParseRSS(buf []byte) (rssFeed RSSFeed, err error) {
 
+	htmlParser := bluemonday.StrictPolicy()
+
 	returnedFeed := RSSFeed{}
 	unMarshalErr := xml.Unmarshal(buf, &returnedFeed)
 	if unMarshalErr != nil {
 		return RSSFeed{}, unMarshalErr
 	}
-	for _, item := range returnedFeed.Channel.RSSItems {
-		item.Title = html.UnescapeString(item.Title)
-		item.Description = html.UnescapeString(item.Description)
+	for i, item := range returnedFeed.Channel.RSSItems {
+		returnedFeed.Channel.RSSItems[i].Title = html.UnescapeString(item.Title)
+		returnedFeed.Channel.RSSItems[i].Description = htmlParser.Sanitize(html.UnescapeString(item.Description))
 	}
 	returnedFeed.Channel.Title = html.UnescapeString(returnedFeed.Channel.Title)
 	returnedFeed.Channel.Description = html.UnescapeString(returnedFeed.Channel.Description)

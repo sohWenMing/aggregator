@@ -2,6 +2,7 @@ package commands
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"fmt"
 	"io"
@@ -79,7 +80,7 @@ func initAllNameToHandlers() []nameToHandler {
 		{"register", handlerRegisterUser},
 		{"reset", handlerResetDatabase},
 		{"users", handlerGetUsers},
-		{"agg", middleWareLoggedIn(handlerAgg)},
+		{"agg", handlerAgg},
 		{"addfeed", middleWareLoggedIn(handlerAddFeed)},
 		{"feeds", handlerGetFeeds},
 		{"follow", middleWareLoggedIn(handlerAddFeedFollow)},
@@ -142,16 +143,22 @@ func handlerRegisterUser(cmd enteredCommand, w io.Writer, state *database.State)
 		Name:      cmd.args[0],
 	}
 	createdUser, createErr := state.Db.CreateUser(context.Background(), params)
+
 	if createErr != nil {
-		isPQErr, pqErr, rawErr := errorutils.UnwrapPqErr(createErr)
+		isPQErr, isUniqueViolation, _, rawErr := database.CheckPqErr(createErr)
+
+		if isUniqueViolation {
+			fmt.Fprintf(w, "User %s already exists in database\n", cmd.args[0])
+			return fmt.Errorf("user %s already exists %w", cmd.args[0], definederrors.ErrorUserAlreadyExists)
+		}
+
 		if isPQErr {
-			if pqErr.Code == "23505" {
-				fmt.Fprintf(w, "User %s already exists in database\n", cmd.args[0])
-				return fmt.Errorf("user %s already exists %w", cmd.args[0], definederrors.ErrorUserAlreadyExists)
-			}
+			fmt.Fprintln(w, definederrors.ErrorDatabaseErr.Error())
+			return definederrors.ErrorDatabaseErr
 		}
 		return rawErr
 	}
+
 	fmt.Fprintf(w, "user %s has been added\n", cmd.args[0])
 	state.Cfg.SetUser(cmd.args[0], w)
 	state.Cfg.CurrentUser.ID = createdUser.ID
@@ -186,7 +193,7 @@ func handlerAgg(cmd enteredCommand, w io.Writer, state *database.State) (err err
 }
 
 func scrapeFeeds(w io.Writer, state *database.State) (err error) {
-	feedToFetch, err := state.Db.GetNextFeedToFetch(context.Background(), state.Cfg.CurrentUser.ID)
+	feedToFetch, err := state.Db.GetNextFeedToFetch(context.Background())
 	if err != nil {
 		fmt.Println("error happened at feedToFetch")
 		return err
@@ -209,10 +216,65 @@ func scrapeFeeds(w io.Writer, state *database.State) (err error) {
 	fmt.Fprintf(w, "Feed Name: %s\n", feed.Channel.Title)
 	items := feed.Channel.RSSItems
 	for _, item := range items {
-		fmt.Fprintf(w, "%v\n", item.Title)
+		writeItemToDB(feedToFetch, w, item, state)
 	}
 	return nil
+}
 
+func writeItemToDB(feed database.Feed, w io.Writer, item rss_parsing.RSSItem, state *database.State) {
+
+	params := database.CreatePostParams{
+		ID:          uuid.New(),
+		CreatedAt:   time.Now(),
+		UpdatedAt:   time.Now(),
+		Title:       item.Title,
+		Url:         item.Link,
+		Description: genNullableString(item.Description),
+		PublishedAt: parseDate(item.PubDate),
+		FeedID:      feed.ID,
+	}
+
+	_, err := state.Db.CreatePost(context.Background(), params)
+	if err != nil {
+		isPQErr, isUniqueViolation, pqErr, rawErr := database.CheckPqErr(err)
+
+		if isUniqueViolation {
+			return
+		}
+
+		if isPQErr {
+			fmt.Fprintf(w, "PqErrCode: %s\n", pqErr.Code)
+			fmt.Fprintf(w, "PqErrMsg: %s\n", pqErr.Message)
+			return
+		}
+		fmt.Fprintln(w, rawErr.Error())
+		return
+	}
+
+}
+
+func genNullableString(input string) (sqlNullableString sql.NullString) {
+
+	if len(input) == 0 {
+		sqlNullableString.Valid = false
+		return sqlNullableString
+	}
+	sqlNullableString.String = input
+	sqlNullableString.Valid = true
+	return sqlNullableString
+
+}
+
+func parseDate(timestamp string) (sqlNullableTime sql.NullTime) {
+	parsedDate, err := time.Parse(time.RFC1123Z, timestamp)
+	var nullTime sql.NullTime
+	if err != nil {
+		nullTime.Valid = false
+		return nullTime
+	}
+	nullTime.Time = parsedDate
+	nullTime.Valid = true
+	return nullTime
 }
 
 func handlerTest(cmd enteredCommand, w io.Writer, state *database.State) (err error) {
@@ -376,15 +438,25 @@ func handlerGetFeedFollowsForUser(cmd enteredCommand, w io.Writer, state *databa
 
 func fetchFeed(feedURL string, state *database.State) (feed *rss_parsing.RSSFeed, err error) {
 
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, feedURL, nil)
+	req, cancel, err := getReqAndCancelFunc(feedURL)
 	if err != nil {
 		return nil, err
 	}
-	req.Header.Set("user-agent", "gator")
-	res, err := state.Client.Do(req)
+	defer cancel()
+	return makeRSSReq(*state.Client, req)
+}
+
+func testFetchFeed(feedURL string) (feed *rss_parsing.RSSFeed, err error) {
+	req, cancel, err := getReqAndCancelFunc(feedURL)
+	if err != nil {
+		return nil, err
+	}
+	defer cancel()
+	return makeRSSReq(http.Client{}, req)
+}
+
+func makeRSSReq(client http.Client, req *http.Request) (*rss_parsing.RSSFeed, error) {
+	res, err := client.Do(req)
 	if err != nil {
 		return nil, err
 	}
@@ -398,7 +470,18 @@ func fetchFeed(feedURL string, state *database.State) (feed *rss_parsing.RSSFeed
 		return nil, err
 	}
 	return &rssFeed, nil
+}
 
+func getReqAndCancelFunc(feedURL string) (*http.Request, context.CancelFunc, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, feedURL, nil)
+	if err != nil {
+		cancel()
+		return nil, nil, err
+	}
+	req.Header.Set("user-agent", "gator")
+	return req, cancel, nil
 }
 
 // called at the main program, used to initialise the commandMap so that it can be written to

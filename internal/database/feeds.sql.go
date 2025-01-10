@@ -221,13 +221,12 @@ SELECT feeds.id, feeds.created_at, feeds.updated_at, feeds.name, feeds.url, feed
   FROM feed_follows
   JOIN feeds
     ON feed_follows.feed_id = feeds.id
-  WHERE feed_follows.user_id = $1
   ORDER BY feeds.last_fetched_at NULLS FIRST
   LIMIT 1
 `
 
-func (q *Queries) GetNextFeedToFetch(ctx context.Context, userID uuid.UUID) (Feed, error) {
-	row := q.db.QueryRowContext(ctx, getNextFeedToFetch, userID)
+func (q *Queries) GetNextFeedToFetch(ctx context.Context) (Feed, error) {
+	row := q.db.QueryRowContext(ctx, getNextFeedToFetch)
 	var i Feed
 	err := row.Scan(
 		&i.ID,

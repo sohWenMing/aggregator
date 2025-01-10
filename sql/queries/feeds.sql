@@ -68,7 +68,6 @@ SELECT feeds.*
   FROM feed_follows
   JOIN feeds
     ON feed_follows.feed_id = feeds.id
-  WHERE feed_follows.user_id = $1
   ORDER BY feeds.last_fetched_at NULLS FIRST
   LIMIT 1;
  

@@ -1,4 +1,4 @@
-# The Aggregator Project #
+# The gator Project #
 
 ## Purpose Of This Project ##
 The purpose of this project was to practice working on creating a command line tool that worked with PostgreSQL to aggregate RSS feeds

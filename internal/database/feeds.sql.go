@@ -218,9 +218,7 @@ func (q *Queries) GetFeeds(ctx context.Context) ([]GetFeedsRow, error) {
 
 const getNextFeedToFetch = `-- name: GetNextFeedToFetch :one
 SELECT feeds.id, feeds.created_at, feeds.updated_at, feeds.name, feeds.url, feeds.user_id, feeds.last_fetched_at
-  FROM feed_follows
-  JOIN feeds
-    ON feed_follows.feed_id = feeds.id
+  FROM feeds
   ORDER BY feeds.last_fetched_at NULLS FIRST
   LIMIT 1
 `

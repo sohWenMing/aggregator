@@ -15,11 +15,7 @@ and running an instance of PostgreSQL locally while interacting with the program
 ### Contents of the .gatorconfig.json file ###
 {
   "db_url": *\<enter db string here>*,  
-  "current_user_name": "nindgabeet",  
-  "CurrentUser": {
-    "ID": "ad4b9ce2-bdf1-4584-8a15-34daed0e93e5",
-    "Name": "holgith"
-  }
+  "current_user_name": "nindgabeet"
 }
 
 
